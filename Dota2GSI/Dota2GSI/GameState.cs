@@ -1,9 +1,8 @@
-﻿using System;
-using Dota2GSI.Nodes;
+﻿using Dota2GSI.Nodes;
 
 namespace Dota2GSI
 {
-    public class GameState
+    public class GameState : IGameState
     {
         private Newtonsoft.Json.Linq.JObject _ParsedData;
         private string json;
@@ -35,104 +34,50 @@ namespace Dota2GSI
 
         public Auth Auth
         {
-            get
-            {
-                if (auth == null)
-                    auth = new Auth(GetNode("auth"));
-
-                return auth;
-            }
+            get { return auth ?? (auth = new Auth(GetNode("auth"))); }
         }
 
         public Provider Provider
         {
-            get
-            {
-                if (provider == null)
-                    provider = new Provider(GetNode("provider"));
-
-                return provider;
-            }
+            get { return provider ?? (provider = new Provider(GetNode("provider"))); }
         }
 
         public Map Map
         {
-            get
-            {
-                if (map == null)
-                    map = new Map(GetNode("map"));
-
-                return map;
-            }
+            get { return map ?? (map = new Map(GetNode("map"))); }
         }
 
         public Player Player
         {
-            get
-            {
-                if (player == null)
-                    player = new Player(GetNode("player"));
-
-                return player;
-            }
+            get { return player ?? (player = new Player(GetNode("player"))); }
         }
 
         public Hero Hero
         {
-            get
-            {
-                if (hero == null)
-                    hero = new Hero(GetNode("hero"));
-
-                return hero;
-            }
+            get { return hero ?? (hero = new Hero(GetNode("hero"))); }
         }
 
         public Abilities Abilities
         {
-            get
-            {
-                if (abilities == null)
-                    abilities = new Abilities(GetNode("abilities"));
-
-                return abilities;
-            }
+            get { return abilities ?? (abilities = new Abilities(GetNode("abilities"))); }
         }
 
         public Items Items
         {
-            get
-            {
-                if (items == null)
-                    items = new Items(GetNode("items"));
-
-                return items;
-            }
+            get { return items ?? (items = new Items(GetNode("items"))); }
         }
 
         public GameState Previously
         {
-            get
-            {
-                if (previously == null)
-                    previously = new GameState(GetNode("previously"));
-
-                return previously;
-            }
+            get { return previously ?? (previously = new GameState(GetNode("previously"))); }
         }
 
         public GameState Added
         {
-            get
-            {
-                if (added == null)
-                    added = new GameState(GetNode("added"));
-
-                return added;
-            }
+            get { return added ?? (added = new GameState(GetNode("added"))); }
         }
 
-        private String GetNode(string name)
+        private string GetNode(string name)
         {
             Newtonsoft.Json.Linq.JToken value;
 

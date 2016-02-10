@@ -1,35 +1,29 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
-using System.Linq;
 using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Dota2GSI
 {
-    public delegate void NewGameStateHandler(GameState gamestate);
-    
-    public class GameStateListener
+    public class GameStateListener : IGameStateListener
     {
-        private bool isRunning = false;
-        private int connection_port;
-        private HttpListener net_Listener;
-        private AutoResetEvent waitForConnection = new AutoResetEvent(false);
-        private GameState currentGameState;
+        private CancellationTokenSource _cancellation;
+
+        private readonly HttpListener _listener;
+
+        private GameState _currentGameState;
 
         public GameState CurrentGameState
         {
             get
             {
-                return currentGameState;
+                return _currentGameState;
             }
             private set
             {
-                currentGameState = value;
+                _currentGameState = value;
                 RaiseOnNewGameState();
             }
         }
@@ -37,12 +31,12 @@ namespace Dota2GSI
         /// <summary>
         /// Gets the port that is being listened
         /// </summary>
-        public int Port { get { return connection_port; } }
+        public int Port { get; }
 
         /// <summary>
         /// Returns whether or not the listener is running
         /// </summary>
-        public bool Running { get { return isRunning; } }
+        public bool Running { get { return !_cancellation?.Token.IsCancellationRequested ?? false; } }
 
         /// <summary>
         ///  Event for handing a newly received game state
@@ -52,33 +46,33 @@ namespace Dota2GSI
         /// <summary>
         /// A GameStateListener that listens for connections on http://localhost:port/
         /// </summary>
-        /// <param name="Port"></param>
-        public GameStateListener(int Port)
+        /// <param name="port"></param>
+        public GameStateListener(int port)
         {
-            connection_port = Port;
-            net_Listener = new HttpListener();
-            net_Listener.Prefixes.Add("http://localhost:" + Port + "/");
+            Port = port;
+            _listener = new HttpListener();
+            _listener.Prefixes.Add("http://localhost:" + port + "/");
         }
 
         /// <summary>
         /// A GameStateListener that listens for connections to the specified URI
         /// </summary>
-        /// <param name="URI">The URI to listen to</param>
-        public GameStateListener(string URI)
+        /// <param name="uri">The URI to listen to</param>
+        public GameStateListener(string uri)
         {
-            if (!URI.EndsWith("/"))
-                URI += "/";
+            if (!uri.EndsWith("/"))
+                uri += "/";
 
-            Regex URIPattern = new Regex("^https?:\\/\\/.+:([0-9]*)\\/$", RegexOptions.IgnoreCase);
-            Match PortMatch = URIPattern.Match(URI);
+            Regex uriPattern = new Regex("^https?:\\/\\/.+:([0-9]*)\\/$", RegexOptions.IgnoreCase);
+            Match portMatch = uriPattern.Match(uri);
 
-            if (!PortMatch.Success)
-                throw new ArgumentException("Not a valid URI: " + URI);
+            if (!portMatch.Success)
+                throw new ArgumentException("Not a valid URI: " + uri);
 
-            connection_port = Convert.ToInt32(PortMatch.Groups[1].Value);
+            Port = Convert.ToInt32(portMatch.Groups[1].Value);
 
-            net_Listener = new HttpListener();
-            net_Listener.Prefixes.Add(URI);
+            _listener = new HttpListener();
+            _listener.Prefixes.Add(uri);
         }
 
         /// <summary>
@@ -86,19 +80,14 @@ namespace Dota2GSI
         /// </summary>
         public bool Start()
         {
-            if (!isRunning)
+            if (_cancellation != null)
             {
-                Thread ListenerThread = new Thread(new ThreadStart(Run));
-                try
-                {
-                    net_Listener.Start();
-                }
-                catch (HttpListenerException)
-                {
-                    return false;
-                }
-                isRunning = true;
-                ListenerThread.Start();
+                //Todo Use lazy<T> to guarantee thread safe init
+                _cancellation = new CancellationTokenSource();
+                var token = _cancellation.Token;
+
+                Task.Run(() => Run(token), token);
+
                 return true;
             }
 
@@ -110,32 +99,33 @@ namespace Dota2GSI
         /// </summary>
         public void Stop()
         {
-            isRunning = false;
+            _cancellation.Cancel();
+
+            _cancellation = null;
         }
 
-        private void Run()
+        private async void Run(CancellationToken token)
         {
-            while (isRunning)
+            while (!token.IsCancellationRequested)
             {
-                net_Listener.BeginGetContext(ReceiveGameState, net_Listener);
-                waitForConnection.WaitOne();
-                waitForConnection.Reset();
+                HttpListenerContext context = await _listener.GetContextAsync();
+
+                var json = GetJsonFromGameContext(context);
+
+                CurrentGameState = new GameState(json);
             }
-            net_Listener.Stop();
+            _listener.Stop();
         }
 
-        private void ReceiveGameState(IAsyncResult result)
+        private string GetJsonFromGameContext(HttpListenerContext context)
         {
-            HttpListenerContext context = net_Listener.EndGetContext(result);
-            HttpListenerRequest request = context.Request;
-            string JSON;
-
-            waitForConnection.Set();
+            string json;
+            var request = context.Request;
 
             using (Stream inputStream = request.InputStream)
             {
                 using (StreamReader sr = new StreamReader(inputStream))
-                    JSON = sr.ReadToEnd();
+                    json = sr.ReadToEnd();
             }
             using (HttpListenerResponse response = context.Response)
             {
@@ -143,18 +133,15 @@ namespace Dota2GSI
                 response.StatusDescription = "OK";
                 response.Close();
             }
-            CurrentGameState = new GameState(JSON);
+
+            return json;
         }
 
         private void RaiseOnNewGameState()
         {
-            foreach (Delegate d in NewGameState.GetInvocationList())
-            {
-                if (d.Target is ISynchronizeInvoke)
-                    (d.Target as ISynchronizeInvoke).BeginInvoke(d, new object[] { CurrentGameState });
-                else
-                    d.DynamicInvoke(CurrentGameState);
-            }
+            var handler = NewGameState;
+
+            handler?.Invoke(CurrentGameState);
         }
     }
 }
