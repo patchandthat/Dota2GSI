@@ -80,7 +80,7 @@ namespace Dota2GSI
         /// </summary>
         public bool Start()
         {
-            if (_cancellation != null)
+            if (_cancellation == null)
             {
                 //Todo Use lazy<T> to guarantee thread safe init
                 _cancellation = new CancellationTokenSource();
@@ -106,6 +106,8 @@ namespace Dota2GSI
 
         private async void Run(CancellationToken token)
         {
+            _listener.Start();
+
             while (!token.IsCancellationRequested)
             {
                 HttpListenerContext context = await _listener.GetContextAsync();
